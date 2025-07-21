@@ -1,18 +1,41 @@
 package handlers
 
-
 import (
-	 "net/http"
-	 "strings"
-	 "github.com/trynax/shortly/storage"
+	"log"
+	"net/http"
+	"strings"
+
+	"github.com/trynax/shortly/storage"
 )
 
-func RedirectHandler(w http.ResponseWriter, r  *http.Request){
+func RedirectHandler(w http.ResponseWriter, r *http.Request) {
 	code := strings.TrimPrefix(r.URL.Path, "/")
-	if longURL,exists := storage.URLSTORE[code]; exists {
-		http.Redirect(w,r, longURL, http.StatusFound)
+
+	// Skip empty codes or favicon requests
+	if code == "" || code == "favicon.ico" {
+		http.NotFound(w, r)
 		return
 	}
 
-	http.NotFound(w,r)
+	store := storage.GetStore()
+	if store == nil {
+		http.Error(w, "Database not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	longURL, err := store.GetURL(code)
+	if err != nil {
+		log.Printf("Error getting URL for code %s: %v", code, err)
+		http.NotFound(w, r)
+		return
+	}
+
+	// Increment click counter
+	err = store.IncrementClicks(code)
+	if err != nil {
+		log.Printf("Error incrementing clicks for code %s: %v", code, err)
+		// Don't fail the redirect, just log the error
+	}
+
+	http.Redirect(w, r, longURL, http.StatusFound)
 }
